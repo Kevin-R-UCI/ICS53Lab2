@@ -6,6 +6,8 @@
 void eval(char *cmdline);
 int parseline(char *buf, char **argv, char **redirect_in, char **redirect_out);
 int builtin_command(char **argv); 
+void get_redirect(int *argc, char **argv, char **redirect_in, char **redirect_out);
+void dupf(char *redir, char *mode,  FILE *old);
 
 int main() 
 {
@@ -41,14 +43,10 @@ void eval(char *cmdline)
 
     if (!builtin_command(argv)) { 
 	if ((pid = Fork()) == 0) {   /* Child runs user job */
-		if(redirect_in != NULL) {
-			FILE *in = Fopen(redirect_in, "r");
-			dup2(fileno(in), fileno(stdin));
-		}
-		if(redirect_out != NULL) {
-			FILE *out = Fopen(redirect_out, "w");
-			dup2(fileno(out), fileno(stdout));
-		}
+		//TODO: possibly wrap these into a simple function to make it look cleaner?
+		dupf(redirect_in, "r", stdin);
+		dupf(redirect_out, "w", stdout);
+	    
 	    if (execve(argv[0], argv, environ) < 0) {
 		printf("%s: Command not found.\n", argv[0]);
 		exit(0);
@@ -108,35 +106,28 @@ int parseline(char *buf, char **argv, char **redirect_in, char **redirect_out)
     if ((bg = (*argv[argc-1] == '&')) != 0)
 	argv[--argc] = NULL;
 	
-	//redirect input/output
-	if(argc > 2) {
-		if(*argv[argc-2] == '<' || *argv[argc-2] == '>') {
-			printf("redirecting ");
-			if(*argv[argc-2] == '<') {
-				printf("input to %s\n", argv[argc-1]);
-				*redirect_in = argv[--argc];
-				argv[--argc] = NULL;
-			} else if(*argv[argc-2] == '>') {
-				printf("output to %s\n", argv[argc-1]);
-				*redirect_out = argv[--argc];
-				argv[--argc] = NULL;
-			}
-		}
-	}
-	if(argc > 2) {
-		if(*argv[argc-2] == '<' || *argv[argc-2] == '>') {
-			if(*argv[argc-2] == '<') {
-				*redirect_in = argv[--argc];
-				argv[--argc] = NULL;
-			} else if(*argv[argc-2] == '>') {
-				*redirect_out = argv[--argc];
-				argv[--argc] = NULL;
-			}
-		}
-	}
-    
+	//called twice to get the possible two redirects
+	get_redirect(&argc, argv, redirect_in, redirect_out);
+	get_redirect(&argc, argv, redirect_in, redirect_out);
     return bg;
 }
 /* $end parseline */
 
+void get_redirect(int *argc, char **argv, char **redirect_in, char **redirect_out) {
+	if(*argc > 2) {
+		if(*argv[*argc-2] == '<') {
+			*redirect_in = argv[--(*argc)];
+			argv[--(*argc)] = NULL;
+		} else if(*argv[*argc-2] == '>') {
+			*redirect_out = argv[--(*argc)];
+			argv[--(*argc)] = NULL;
+		}
+	}    
+}
 
+void dupf(char *redir, char *mode,  FILE *old) {
+	if(redir != NULL) {
+		FILE *r = Fopen(redir, mode);
+		dup2(fileno(r), fileno(old));
+	}
+}
