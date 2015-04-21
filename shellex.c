@@ -4,7 +4,7 @@
 
 /* function prototypes */
 void eval(char *cmdline);
-int parseline(char *buf, char **argv);
+int parseline(char *buf, char **argv, char **redirect_in, char **redirect_out);
 int builtin_command(char **argv); 
 
 int main() 
@@ -34,12 +34,21 @@ void eval(char *cmdline)
     pid_t pid;           /* Process id */
     
     strcpy(buf, cmdline);
-    bg = parseline(buf, argv); 
+    char *redirect_in = NULL, *redirect_out = NULL;
+    bg = parseline(buf, argv, &redirect_in, &redirect_out); 
     if (argv[0] == NULL)  
 	return;   /* Ignore empty lines */
 
     if (!builtin_command(argv)) { 
 	if ((pid = Fork()) == 0) {   /* Child runs user job */
+		if(redirect_in != NULL) {
+			FILE *in = Fopen(redirect_in, "r");
+			dup2(fileno(in), fileno(stdin));
+		}
+		if(redirect_out != NULL) {
+			FILE *out = Fopen(redirect_out, "w");
+			dup2(fileno(out), fileno(stdout));
+		}
 	    if (execve(argv[0], argv, environ) < 0) {
 		printf("%s: Command not found.\n", argv[0]);
 		exit(0);
@@ -71,7 +80,7 @@ int builtin_command(char **argv)
 
 /* $begin parseline */
 /* parseline - Parse the command line and build the argv array */
-int parseline(char *buf, char **argv) 
+int parseline(char *buf, char **argv, char **redirect_in, char **redirect_out) 
 {
     char *delim;         /* Points to first space delimiter */
     int argc;            /* Number of args */
@@ -98,7 +107,34 @@ int parseline(char *buf, char **argv)
     /* Should the job run in the background? */
     if ((bg = (*argv[argc-1] == '&')) != 0)
 	argv[--argc] = NULL;
-
+	
+	//redirect input/output
+	if(argc > 2) {
+		if(*argv[argc-2] == '<' || *argv[argc-2] == '>') {
+			printf("redirecting ");
+			if(*argv[argc-2] == '<') {
+				printf("input to %s\n", argv[argc-1]);
+				*redirect_in = argv[--argc];
+				argv[--argc] = NULL;
+			} else if(*argv[argc-2] == '>') {
+				printf("output to %s\n", argv[argc-1]);
+				*redirect_out = argv[--argc];
+				argv[--argc] = NULL;
+			}
+		}
+	}
+	if(argc > 2) {
+		if(*argv[argc-2] == '<' || *argv[argc-2] == '>') {
+			if(*argv[argc-2] == '<') {
+				*redirect_in = argv[--argc];
+				argv[--argc] = NULL;
+			} else if(*argv[argc-2] == '>') {
+				*redirect_out = argv[--argc];
+				argv[--argc] = NULL;
+			}
+		}
+	}
+    
     return bg;
 }
 /* $end parseline */
