@@ -1,5 +1,6 @@
 /* $begin shellmain */
 #include "csapp.h"
+#include "string.h"
 #define MAXARGS   128
 
 /* function prototypes */
@@ -19,7 +20,6 @@ int main()
 		Fgets(cmdline, MAXLINE, stdin); 
 		if (feof(stdin))
 			exit(0);
-
 		/* Evaluate */
 		eval(cmdline);
 	} 
@@ -41,26 +41,45 @@ void eval(char *cmdline)
 	if (argv[0] == NULL)  
 		return;   /* Ignore empty lines */
 
-	if (!builtin_command(argv)) { 
-		if ((pid = Fork()) == 0) {   /* Child runs user job */
-			//TODO: possibly wrap these into a simple function to make it look cleaner?
-			dupf(redirect_in, "r", stdin);
-			dupf(redirect_out, "w", stdout);
-
-			if (execve(argv[0], argv, environ) < 0) {
-				printf("%s: Command not found.\n", argv[0]);
-				exit(0);
-			}
-		}
-
+	if (!builtin_command(argv)) {
 		/* Parent waits for foreground job to terminate */
 		if (!bg) {
+            if ((pid = Fork()) == 0) {   /* Child runs user job */
+                //TODO: possibly wrap these into a simple function to make it look cleaner?
+                dupf(redirect_in, "r", stdin);
+                dupf(redirect_out, "w", stdout);
+                
+                if (execve(argv[0], argv, environ) < 0) {
+                    printf("%s: Command not found.\n", argv[0]);
+                    exit(0);
+                }
+                exit(0);
+            }
+
 			int status;
 			if (waitpid(pid, &status, 0) < 0)
 				unix_error("waitfg: waitpid error");
+            
+            
 		}
-		else
-			printf("%d %s", pid, cmdline);
+        else {
+            printf("%d %s", pid, cmdline);
+            
+            if ((pid = Fork()) == 0) {
+                setpgid(pid, 1);
+                //TODO: possibly wrap these into a simple function to make it look cleaner?
+                dupf(redirect_in, "r", stdin);
+                dupf(redirect_out, "w", stdout);
+                
+                if (execve(argv[0], argv, environ) < 0) {
+                    printf("%s: Command not found.\n", argv[0]);
+                    exit(0);
+                    
+                }
+                exit(0);
+            }
+
+        }
 	}
 	return;
 }
