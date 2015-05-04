@@ -1,3 +1,9 @@
+/**
+ * Authors: Kevin Rothi, Pavan Somisetty, Skylar Payne, Yvonne Fung
+ * Course: ICS 53
+ * Lab 2
+**/
+
 /* $begin shellmain */
 #include "csapp.h"
 #include "string.h"
