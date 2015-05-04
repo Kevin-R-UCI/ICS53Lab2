@@ -4,82 +4,87 @@
 #define MAXARGS   128
 
 /* function prototypes */
-void eval(char *cmdline);
+void eval(char *cmdline, int * backs);
 int parseline(char *buf, char **argv, char **redirect_in, char **redirect_out);
 int builtin_command(char **argv); 
 void get_redirect(int *argc, char **argv, char **redirect_in, char **redirect_out);
 void dupf(char *redir, char *mode,  FILE *old);
+void reap(pid_t pid, int status);
+void killall();
 
 int main() 
 {
 	char cmdline[MAXLINE]; /* Command line */
-
+	int backs = 0; /* Number of Background Processes Running */
 	while (1) {
 		/* Read */
-		printf("> ");                   
+		printf("> ");
 		Fgets(cmdline, MAXLINE, stdin); 
 		if (feof(stdin))
 			exit(0);
 		/* Evaluate */
-		eval(cmdline);
+		eval(cmdline, &backs);
 	} 
 }
 /* $end shellmain */
 
 /* $begin eval */
 /* eval - Evaluate a command line */
-void eval(char *cmdline) 
+void eval(char *cmdline, int *  backs) 
 {
 	char *argv[MAXARGS]; /* Argument list execve() */
 	char buf[MAXLINE];   /* Holds modified command line */
 	int bg;              /* Should the job run in bg or fg? */
 	pid_t pid;           /* Process id */
+	int status;	     /* Captures Status */
 
 	strcpy(buf, cmdline);
 	char *redirect_in = NULL, *redirect_out = NULL;
 	bg = parseline(buf, argv, &redirect_in, &redirect_out); 
+
+	/* Tries to kill all killable background processes */
+	while((pid = waitpid(-1,&status,WNOHANG)) > 0)
+	{
+		reap(pid, status);
+	}
+
 	if (argv[0] == NULL)  
 		return;   /* Ignore empty lines */
 
 	if (!builtin_command(argv)) {
 		/* Parent waits for foreground job to terminate */
 		if (!bg) {
-            if ((pid = Fork()) == 0) {   /* Child runs user job */
-                //TODO: possibly wrap these into a simple function to make it look cleaner?
-                dupf(redirect_in, "r", stdin);
-                dupf(redirect_out, "w", stdout);
-                
-                if (execve(argv[0], argv, environ) < 0) {
-                    printf("%s: Command not found.\n", argv[0]);
-                    exit(0);
-                }
-                exit(0);
-            }
+			if ((pid = Fork()) == 0) {   /* Child runs user job */
+				//TODO: possibly wrap these into a simple function to make it look cleaner?
+				dupf(redirect_in, "r", stdin);
+				dupf(redirect_out, "w", stdout);
 
-			int status;
+				if (execve(argv[0], argv, environ) < 0) {
+					printf("%s: Command not found.\n", argv[0]);
+				}
+				exit(0);
+			}
+
 			if (waitpid(pid, &status, 0) < 0)
 				unix_error("waitfg: waitpid error");
-            
-            
-		}
-        else {
-            printf("%d %s", pid, cmdline);
-            
-            if ((pid = Fork()) == 0) {
-                setpgid(pid, 1);
-                //TODO: possibly wrap these into a simple function to make it look cleaner?
-                dupf(redirect_in, "r", stdin);
-                dupf(redirect_out, "w", stdout);
-                
-                if (execve(argv[0], argv, environ) < 0) {
-                    printf("%s: Command not found.\n", argv[0]);
-                    exit(0);
-                    
-                }
-                exit(0);
-            }
 
-        }
+
+		}
+		else { /* Run Process in the Background */
+			printf("%d %s", pid, cmdline);
+
+			if ((pid = Fork()) == 0) {
+				//TODO: possibly wrap these into a simple function to make it look cleaner?
+				dupf(redirect_in, "r", stdin);
+				dupf(redirect_out, "w", stdout);
+				if (execve(argv[0], argv, environ) < 0) {
+					printf("%s: Command not found.\n", argv[0]);
+				}
+
+				exit(0);
+			}
+
+		}
 	}
 	return;
 }
@@ -88,7 +93,10 @@ void eval(char *cmdline)
 int builtin_command(char **argv) 
 {
 	if (!strcmp(argv[0], "quit")) /* quit command */
+	{
+		killall();
 		exit(0);  
+	}
 	if (!strcmp(argv[0], "&"))    /* Ignore singleton & */
 		return 1;
 	return 0;                     /* Not a builtin command */
@@ -149,4 +157,20 @@ void dupf(char *redir, char *mode,  FILE *old) {
 		FILE *r = Fopen(redir, mode);
 		dup2(fileno(r), fileno(old));
 	}
+}
+/* Kills 1 process */
+void reap(pid_t pid, int status)
+{
+	if(pid > 0){
+		if(status == 0)
+		{
+			kill(pid, SIGTERM);
+		}
+	}
+}
+/* Kills all process */
+void killall()
+{
+	signal(SIGTERM,SIG_IGN);
+	Kill(0,SIGTERM);
 }
